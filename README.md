@@ -16,9 +16,9 @@
 
 更多细节，请查看代码！代码中有详细的注释。
 
-## 清空特定房间聊天记录(相对于源代码新增,因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)
+## 清空特定房间聊天记录
 
-支持清空指定聊天室的聊天记录
+支持清空指定聊天室的聊天记录(相对于源代码新增,因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)
 
 1.前置要求cf设置环境变量
 
