@@ -1,72 +1,70 @@
-# Cloudflare Edge Chat Demo
+# Cloudflare 边缘聊天演示
 
-This is a demo app written on [Cloudflare Workers](https://workers.cloudflare.com/) utilizing [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) to implement real-time chat with stored history. This app runs 100% on Cloudflare's edge.
+这是一个基于 [Cloudflare Workers](https://workers.cloudflare.com/) 并使用 [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) 实现的实时聊天应用演示，具有消息历史存储功能。该应用 100% 运行在 Cloudflare 的边缘网络上。
 
-Try it here: https://edge-chat-demo.cloudflareworkers.com
+立即体验: https://edge-chat-demo.cloudflareworkers.com
 
-The reason this demo is remarkable is because it deals with state. Before Durable Objects, Workers were stateless, and state had to be stored elsewhere. State can mean storage, but it also means the ability to coordinate. In a chat room, when one user sends a message, the app must somehow route that message to other users, via connections that those other users already had open. These connections are state, and coordinating them in a stateless framework is hard if not impossible.
+这个演示的独特之处在于它处理了状态问题。在 Durable Objects 出现之前，Workers 是无状态的，状态必须存储在别处。状态不仅意味着存储，还意味着协调能力。在聊天室中，当一个用户发送消息时，应用必须通过其他用户已经建立的连接将消息路由给他们。这些连接就是状态，在无状态框架中协调它们非常困难甚至不可能。
 
-## How does it work?
+## 工作原理
 
-This chat app uses a Durable Object to control each chat room. Users connect to the object using WebSockets. Messages from one user are broadcast to all the other users. The chat history is also stored in durable storage, but this is only for history. Real-time messages are relayed directly from one user to others without going through the storage layer.
+本聊天应用为每个聊天室使用一个 Durable Object。用户通过 WebSocket 连接到该对象。一个用户发送的消息会广播给其他所有用户。聊天历史也会存储在持久化存储中，但这仅用于历史记录。实时消息直接从发送者转发给其他用户，不经过存储层。
 
-Additionally, this demo uses Durable Objects for a second purpose: Applying a rate limit to messages from any particular IP. Each IP is assigned a Durable Object that tracks recent request frequency, so that users who send too many messages can be temporarily blocked -- even across multiple chat rooms. Interestingly, these objects don't actually store any durable state at all, because they only care about very recent history, and it's not a big deal if a rate limiter randomly resets on occasion. So, these rate limiter objects are an example of a pure coordination object with no storage.
+此外，本演示还使用 Durable Objects 实现了第二个功能：对特定IP的消息进行速率限制。每个IP被分配一个 Durable Object 来跟踪最近的请求频率，从而可以暂时阻止发送过多消息的用户——甚至可以跨多个聊天室进行限制。有趣的是，这些对象实际上并不存储任何持久状态，因为它们只关心最近的历史记录，而且偶尔重置速率限制器也无妨。因此，这些速率限制器对象是纯协调对象（无存储）的示例。
 
-This chat app is only a few hundred lines of code. The deployment configuration is only a few lines. Yet, it will scale seamlessly to any number of chat rooms, limited only by Cloudflare's available resources. Of course, any individual chat room's scalability has a limit, since each object is single-threaded. But, that limit is far beyond what a human participant could keep up with anyway.
+这个聊天应用只有几百行代码。部署配置也只有几行。然而，它可以无缝扩展到任意数量的聊天室，仅受 Cloudflare 可用资源的限制。当然，单个聊天室的可扩展性有其上限，因为每个对象都是单线程的。但这个上限远高于人类参与者所能达到的水平。
 
-For more details, take a look at the code! It is well-commented.
+更多细节，请查看代码！代码中有详细的注释。
 
-## Updates
+## 更新说明
 
-This example was originally written using the [WebSocket API](https://developers.cloudflare.com/workers/runtime-apis/websockets/), but has since been [modified](https://github.com/cloudflare/workers-chat-demo/pull/32) to use the [WebSocket Hibernation API](https://developers.cloudflare.com/durable-objects/api/websockets/#websocket-hibernation), which is exclusive to Durable Objects.
+此示例最初使用 [WebSocket API](https://developers.cloudflare.com/workers/runtime-apis/websockets/) 编写，后来[修改](https://github.com/cloudflare/workers-chat-demo/pull/32)为使用 [WebSocket 休眠 API](https://developers.cloudflare.com/durable-objects/api/websockets/#websocket-hibernation)，这是 Durable Objects 独有的功能。
 
-Prior to switching to the Hibernation API, WebSockets connected to a chatroom would keep the Durable Object pinned to memory even if they were just idling. This meant that a Durable Object with an open WebSocket connection would incur duration charges so long as the WebSocket connection stayed open. By switching to the WebSocket Hibernation API, the Workers Runtime will evict inactive Durable Object instances from memory, but still retain all WebSocket connections to the Durable Object. When the WebSockets become active again, the runtime will recreate the Durable Object and deliver events to the appropriate WebSocket event handler.
+在切换到休眠 API 之前，连接到聊天室的 WebSocket 会保持 Durable Object 固定在内存中，即使它们只是处于空闲状态。这意味着具有开放 WebSocket 连接的 Durable Object 只要保持连接就会产生持续时间费用。通过切换到 WebSocket 休眠 API，Workers 运行时可以从内存中驱逐非活动的 Durable Object 实例，但仍保留所有到 Durable Object 的 WebSocket 连接。当 WebSocket 再次变为活动状态时，运行时会重新创建 Durable Object 并将事件传递给相应的 WebSocket 事件处理程序。
 
-Switching to the WebSocket Hibernation API reduces duration billing from the lifetime of the WebSocket connection to the amount of time when JavaScript is actively executing.
+切换到 WebSocket 休眠 API 将计费时间从 WebSocket 连接的整个生命周期缩短为 JavaScript 实际执行的时间。
 
-## Learn More
+## 了解更多
 
-* [Durable Objects introductory blog post](https://blog.cloudflare.com/introducing-workers-durable-objects)
-* [Durable Objects documentation](https://developers.cloudflare.com/workers/learning/using-durable-objects)
-* [Durable Object WebSocket documentation](https://developers.cloudflare.com/durable-objects/reference/websockets/)
+* [Durable Objects 介绍博客](https://blog.cloudflare.com/introducing-workers-durable-objects)
+* [Durable Objects 文档](https://developers.cloudflare.com/workers/learning/using-durable-objects)
+* [Durable Object WebSocket 文档](https://developers.cloudflare.com/durable-objects/reference/websockets/)
 
-## Deploy it yourself
+## 自行部署
 
-If you haven't already, enable Durable Objects by visiting the [Cloudflare dashboard](https://dash.cloudflare.com/) and navigating to "Workers" and then "Durable Objects".
+如果尚未启用 Durable Objects，请访问 [Cloudflare 仪表板](https://dash.cloudflare.com/) 并导航至 "Workers"，然后选择 "Durable Objects"。
 
-Then, make sure you have [Wrangler](https://developers.cloudflare.com/workers/cli-wrangler/install-update), the official Workers CLI, installed. Version 3.30.1 or newer is recommended for running this example.
+确保已安装 [Wrangler](https://developers.cloudflare.com/workers/cli-wrangler/install-update)（官方 Workers CLI）。建议使用 3.30.1 或更高版本来运行此示例。
 
-After installing it, run `wrangler login` to [connect it to your Cloudflare account](https://developers.cloudflare.com/workers/cli-wrangler/authentication).
+安装后，运行 `wrangler login` 以[连接到您的 Cloudflare 账户](https://developers.cloudflare.com/workers/cli-wrangler/authentication)。
 
-Once you've enabled Durable Objects on your account and have Wrangler installed and authenticated, you can deploy the app for the first time by running:
+在账户上启用 Durable Objects 并安装和验证 Wrangler 后，可以通过运行以下命令首次部署应用：
 
     wrangler deploy
 
-If you get an error saying "Cannot create binding for class [...] because it is not currently configured to implement durable objects", you need to update your version of Wrangler.
+如果收到错误提示 "Cannot create binding for class [...] because it is not currently configured to implement durable objects"，则需要更新 Wrangler 版本。
 
-This command will deploy the app to your account under the name `edge-chat-demo`.
+此命令将应用部署到您的账户，名称为 `edge-chat-demo`。
 
-## What are the dependencies?
+## 依赖项
 
-This demo code does not have any dependencies, aside from Cloudflare Workers (for the server side, `chat.mjs`) and a modern web browser (for the client side, `chat.html`). Deploying the code requires Wrangler.
+此演示代码除了 Cloudflare Workers（服务端 `chat.mjs`）和现代网页浏览器（客户端 `chat.html`）外，没有其他依赖项。部署代码需要 Wrangler。
 
-## How to uninstall
+## 卸载方法
 
-Modify wrangler.toml to remove the durable_objects bindings and add a deleted_classes migration. The bottom of your wrangler.toml should look like:
-
+修改 wrangler.toml 文件，移除 durable_objects 绑定并添加 deleted_classes 迁移。wrangler.toml 文件底部应如下所示：
 ```
 [durable_objects]
 bindings = [
 ]
 
-# Indicate that you want the ChatRoom and RateLimiter classes to be callable as Durable Objects.
+#表示您希望 ChatRoom 和 RateLimiter 类可作为 Durable Objects 调用。
 [[migrations]]
-tag = "v1" # Should be unique for each entry
+tag = "v1" # 每个条目应该是唯一的
 new_classes = ["ChatRoom", "RateLimiter"]
 
 [[migrations]]
 tag = "v2"
 deleted_classes = ["ChatRoom", "RateLimiter"]
 ```
-
-Then run `wrangler deploy`, which will delete the Durable Objects and all data stored in them.  To remove the Worker, go to [dash.cloudflare.com](dash.cloudflare.com) and navigate to Workers -> Overview -> edge-chat-demo -> Manage Service -> Delete (bottom of page)
+然后运行 `wrangler deploy`，这将删除 Durable Objects 及其存储的所有数据。要移除 Worker，请访问 [dash.cloudflare.com](dash.cloudflare.com) 并导航至 Workers -> Overview -> edge-chat-demo -> Manage Service -> Delete (页面底部)
