@@ -2,7 +2,7 @@
 
 这是一个基于 [Cloudflare Workers](https://workers.cloudflare.com/) 并使用 [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) 实现的实时聊天应用演示，具有消息历史存储功能。该应用 100% 运行在 Cloudflare 的边缘网络上。
 
-立即体验: https://edge-chat-demo.cloudflareworkers.com
+立即体验: https://edge-chat-demo.cloudflareworkers.com（体验版本为官方英文版，界面未汉化，无清空聊天功能）
 
 这个演示的独特之处在于它处理了状态问题。在 Durable Objects 出现之前，Workers 是无状态的，状态必须存储在别处。状态不仅意味着存储，还意味着协调能力。在聊天室中，当一个用户发送消息时，应用必须通过其他用户已经建立的连接将消息路由给他们。这些连接就是状态，在无状态框架中协调它们非常困难甚至不可能。
 
@@ -18,7 +18,7 @@
 
 ## 清空聊天(自制功能)
 
-支持清空指定聊天室的聊天记录(相对于官方源代码新增功能。因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)
+支持清空指定聊天室的聊天记录(相对于官方源代码新增功能。清空同时会清历史用户名，因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)
 
 1.前置要求cf-项目worker-设置-环境变量(每次新部署，变量需要重新设置。如不设置默认ADMIN_SECRET_KEY="del")
 
@@ -67,8 +67,11 @@ URL 格式：https://你的项目域名.workers.dev/api/admin/clear-rate-limit-i
 * [Durable Object WebSocket 文档](https://developers.cloudflare.com/durable-objects/reference/websockets/)
 
 ## 自行部署
-本人部署经验：cf-worker和page-创建worker-链接到github项目-worker项目名称cloudflare-workers-chat(如果要自定义名称请同步修改wrangler.toml里面的name=“ ”)
-            部署命令npx wrangler deploy，其他留空，部署即可
+本人部署经验：
+cf-worker和page-创建worker-链接到github项目-worker项目名称cloudflare-workers-chat(如果要自定义名称请同步修改wrangler.toml里面的name=“ ”)
+部署命令npx wrangler deploy，其他留空，部署即可
+(可选)两个变量按需设置，建议ADMIN_SECRET_KEY修改为你的uuid，不然谁都可以清空聊天
+
 
 这是官方教程：
 如果尚未启用 Durable Objects，请访问 [Cloudflare 仪表板](https://dash.cloudflare.com/) 并导航至 "Workers"，然后选择 "Durable Objects"。
