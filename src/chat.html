@@ -424,12 +424,17 @@ function join() {
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
         addChatMessage(null,
-            "* 这是一个使用Cloudflare Workers Durable Objects构建的演示应用。" +
-            "源代码可以在以下地址找到: https://github.com/cloudflare/workers-chat-demo");
+            "* 这是一个运行在云端的聊天室。" +
+                       //这是一个使用Cloudflare Workers Durable Objects构建的演示应用。
+            "");
+        //源代码可以在以下地址找到: https://github.com/cloudflare/workers-chat-demo
         addChatMessage(null,
-            "* 警告: 聊天室参与者是互联网上的随机用户。" +
-            "名称未经认证；任何人都可以冒充他人。与你聊天的人" +
-            "并非Cloudflare员工。聊天记录会被保存。");
+            "* 提示: 聊天室参与者是互联网上的随机用户。" +
+                       //警告: 聊天室参与者是互联网上的随机用户。
+            "名称未经认证；任何人都可以使用相同名称。请甄别" +
+                       //名称未经认证；任何人都可以冒充他人。与你聊天的人
+            "请勿相信陌生人发送的人链接，与陌生人交易");
+        //并非Cloudflare员工。聊天记录会被保存。
         if (roomname.length == 64) {
           addChatMessage(null,
               "* 这是一个私人房间。你可以通过分享URL邀请他人加入。");
