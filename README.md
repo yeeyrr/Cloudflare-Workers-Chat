@@ -31,7 +31,10 @@
 * [Durable Object WebSocket 文档](https://developers.cloudflare.com/durable-objects/reference/websockets/)
 
 ## 自行部署
+本人部署经验：cf-worker和page-创建worker-链接到github项目(本项目)
+            部署命令npx wrangler deploy，其他留空，部署即可
 
+这是官方教程：
 如果尚未启用 Durable Objects，请访问 [Cloudflare 仪表板](https://dash.cloudflare.com/) 并导航至 "Workers"，然后选择 "Durable Objects"。
 
 确保已安装 [Wrangler](https://developers.cloudflare.com/workers/cli-wrangler/install-update)（官方 Workers CLI）。建议使用 3.30.1 或更高版本来运行此示例。
