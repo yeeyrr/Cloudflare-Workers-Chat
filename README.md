@@ -16,11 +16,11 @@
 
 更多细节，请查看代码！代码中有详细的注释。
 
-## 清空聊天记录
+## 清空聊天
 
 支持清空指定聊天室的聊天记录(相对于官方源代码新增功能。因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)
 
-1.前置要求cf设置环境变量
+1.前置要求cf-项目worker-设置-环境变量(每次新部署，变量需要重新设置)
 
 ADMIN_SECRET_KEY="你设置的uuid"（例：c1d2e3f4-a5b6-7c8d-9e0f-1a2b3c4d5e6f）
 
