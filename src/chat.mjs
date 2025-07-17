@@ -28,6 +28,9 @@
 // * rooms: 映射到 ChatRoom 类的 Durable Object 命名空间绑定
 // * limiters: 映射到 RateLimiter 类的 Durable Object 命名空间绑定
 //
+// 新增：
+// * ADMIN_SECRET_KEY: 用于清空聊天记录的密钥（在 Cloudflare Worker 设置中配置）
+//
 // 在模块化语法中，绑定通过"环境对象"传递，而不是作为全局变量。
 // 这是为了更好的代码组合性。
 
@@ -57,8 +60,21 @@ async function handleErrors(request, func) {
   }
 }
 
+// 定义环境接口，包含 Durable Object 绑定和自定义变量
+// 这有助于 TypeScript 检查，但对于纯 JavaScript 来说不是必需的
+/**
+ * @typedef {Object} Env
+ * @property {DurableObjectNamespace} rooms
+ * @property {DurableObjectNamespace} limiters
+ * @property {string} ADMIN_SECRET_KEY
+ */
+
 // 使用 `export default` 导出主要的 fetch 事件处理器
 export default {
+  /**
+   * @param {Request} request
+   * @param {Env} env
+   */
   async fetch(request, env) {
     return await handleErrors(request, async () => {
       // 解析 URL 并路由请求
@@ -83,6 +99,11 @@ export default {
 }
 
 // 处理 API 请求
+/**
+ * @param {string[]} path
+ * @param {Request} request
+ * @param {Env} env
+ */
 async function handleApiRequest(path, request, env) {
   switch (path[0]) {
     case "room": {
@@ -120,6 +141,60 @@ async function handleApiRequest(path, request, env) {
       return roomObject.fetch(newUrl, request);
     }
 
+    case "admin": {
+      // =======================================================
+      // 新增：处理 `/api/admin/...` 请求用于管理操作
+      // =======================================================
+      // 路由示例：/api/admin/clear-room/<room_name_or_id>?key=<ADMIN_SECRET_KEY>
+
+      if (path[1] === "clear-room") {
+        if (request.method !== "POST") { // 建议使用 POST 请求进行敏感操作
+          return new Response("请使用 POST 方法清空聊天记录。", { status: 405 });
+        }
+
+        const url = new URL(request.url);
+        const requestKey = url.searchParams.get("key"); // 从查询参数获取密钥
+        const roomId = path[2]; // 获取房间名称或 ID
+
+        // 验证密钥
+        if (!env.ADMIN_SECRET_KEY || requestKey !== env.ADMIN_SECRET_KEY) {
+          return new Response("未经授权。密钥不匹配或未设置。", { status: 401 });
+        }
+
+        if (!roomId) {
+          return new Response("请提供要清空的房间名称或 ID。", { status: 400 });
+        }
+
+        let id;
+        if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+        } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+        } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+        }
+
+        try {
+          let roomObject = env.rooms.get(id);
+          // 调用 Durable Object 上的清空方法
+          // 注意：Durable Object 存根的 fetch 方法可以接受自定义路径
+          // 我们这里调用 /clear-messages 路径来触发清空操作
+          const clearResponse = await roomObject.fetch(new URL("https://dummy-url/clear-messages"), { method: "POST" });
+
+          if (clearResponse.ok) {
+            return new Response(`房间 '${roomId}' 的聊天记录已清空。`, { status: 200 });
+          } else {
+            const errorText = await clearResponse.text();
+            return new Response(`清空失败：${errorText}`, { status: clearResponse.status });
+          }
+        } catch (error) {
+          console.error("清空聊天记录时发生错误:", error);
+          return new Response(`清空聊天记录时发生内部错误: ${error.message}`, { status: 500 });
+        }
+      }
+      return new Response("未找到管理操作。", { status: 404 });
+    }
+
     default:
       return new Response("未找到", {status: 404});
   }
@@ -130,6 +205,10 @@ async function handleApiRequest(path, request, env) {
 
 // ChatRoom 实现了一个协调单个聊天室的 Durable Object
 export class ChatRoom {
+  /**
+   * @param {DurableObjectState} state
+   * @param {Env} env
+   */
   constructor(state, env) {
     this.state = state;
     this.storage = state.storage;  // 提供对持久存储的访问
@@ -152,6 +231,9 @@ export class ChatRoom {
   }
 
   // 处理发送到此对象的 HTTP 请求
+  /**
+   * @param {Request} request
+   */
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
@@ -168,6 +250,16 @@ export class ChatRoom {
           await this.handleSession(pair[1], ip);
           return new Response(null, { status: 101, webSocket: pair[0] });
         }
+        // =======================================================
+        // 新增：处理来自 Worker 的清空消息请求
+        // =======================================================
+        case "/clear-messages": {
+          if (request.method !== "POST") {
+            return new Response("清空操作需要 POST 方法。", { status: 405 });
+          }
+          await this.clearAllMessages();
+          return new Response("聊天记录已清空。", { status: 200 });
+        }
 
         default:
           return new Response("未找到", {status: 404});
@@ -175,7 +267,25 @@ export class ChatRoom {
     });
   }
 
+  // =======================================================
+  // 新增：清空所有聊天记录的方法
+  // =======================================================
+  async clearAllMessages() {
+    // 调用 Durable Object 存储的 deleteAll() 方法来清空所有数据
+    await this.storage.deleteAll();
+    console.log(`Durable Object ID: ${this.state.id} - 所有聊天记录已清空。`);
+    // 清空内存中的会话列表，虽然会话会在断开连接后自动消失，
+    // 但为了确保万无一失，清空内存映射。
+    this.sessions.clear();
+    this.lastTimestamp = 0; // 重置时间戳
+  }
+
+
   // 实现基于 WebSocket 的聊天协议
+  /**
+   * @param {WebSocket} webSocket
+   * @param {string} ip
+   */
   async handleSession(webSocket, ip) {
     this.state.acceptWebSocket(webSocket);
 
@@ -207,6 +317,10 @@ export class ChatRoom {
   }
 
   // 处理 WebSocket 消息
+  /**
+   * @param {WebSocket} webSocket
+   * @param {string} msg
+   */
   async webSocketMessage(webSocket, msg) {
     try {
       let session = this.sessions.get(webSocket);
@@ -325,12 +439,19 @@ export class ChatRoom {
 
 // RateLimiter 实现了一个跟踪消息频率并决定何时丢弃消息的 Durable Object
 export class RateLimiter {
+  /**
+   * @param {DurableObjectState} state
+   * @param {Env} env
+   */
   constructor(state, env) {
     // 此IP下次允许发送消息的时间戳
     this.nextAllowedTime = 0;
   }
 
   // 协议：POST 表示IP执行了操作，GET 只读取当前限制
+  /**
+   * @param {Request} request
+   */
   async fetch(request) {
     return await handleErrors(request, async () => {
       let now = Date.now() / 1000;
@@ -350,6 +471,10 @@ export class RateLimiter {
 
 // RateLimiterClient 在调用方实现速率限制逻辑
 class RateLimiterClient {
+  /**
+   * @param {function(): DurableObjectStub} getLimiterStub
+   * @param {function(Error): void} reportError
+   */
   constructor(getLimiterStub, reportError) {
     this.getLimiterStub = getLimiterStub;
     this.reportError = reportError;
