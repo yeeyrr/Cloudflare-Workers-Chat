@@ -1,4 +1,4 @@
-# Cloudflare 边缘聊天演示-汉化增强版
+# Cloudflare 聊天室-汉化增强版
 
 这是一个基于 [Cloudflare Workers](https://workers.cloudflare.com/) 并使用 [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) 实现的实时聊天应用演示，具有消息历史存储功能。该应用 100% 运行在 Cloudflare 的边缘网络上。
 
