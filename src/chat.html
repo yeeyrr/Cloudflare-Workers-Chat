@@ -1,18 +1,19 @@
 <!DOCTYPE html>
 <!--
-  THIS IS NOT THE INTERESTING FILE
+  注意：这不是核心功能文件
+  
+  这只是一个UI界面文件，不包含核心逻辑。
+  本演示的核心功能在服务端代码 chat.mjs 中实现。
 
-  This is just some UI code. There's nothing interesting and unique in this file. The interesting
-  thing about this demo is the server side, which is in chat.mjs.
-
-  WARNING: This was written by a systems engineer, not a web developer. It's probably bad.
+  注意：此文件由系统工程师编写，非专业前端开发人员，代码风格可能不符合前端最佳实践。
 -->
 
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta charset="UTF-8">
 <!--===================================================================================-->
-<!-- Inline style to avoid an extra round trip before the page can render. -->
+<!-- 内联样式避免页面渲染前的额外请求 -->
 <style type="text/css">
 * {
   box-sizing: border-box;
@@ -172,32 +173,32 @@ p:last-of-type {
 </style>
 
 <!--===================================================================================-->
-<!-- The actual HTML. There is not much of it. -->
+<!-- 实际的HTML内容，结构非常简单 -->
 
   </head>
   <body>
     <form id="name-form" action="/fake-form-action">
-      <input id="name-input" placeholder="your name">
-      <p>This chat runs entirely on the edge, powered by<br>
-        <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a></p>
+      <input id="name-input" placeholder="你的名字">
+      <p>此聊天应用完全运行在边缘网络，由<br>
+        <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a>提供技术支持</p>
     </form>
     <form id="room-form" action="/fake-form-action">
-      <p>Enter a public room:</p>
-      <input id="room-name" placeholder="room name"><button id="go-public">Go &raquo;</button>
-      <p>OR</p>
-      <button id="go-private">Create a Private Room &raquo;</button>
+      <p>输入公共房间名称：</p>
+      <input id="room-name" placeholder="房间名称"><button id="go-public">进入 &raquo;</button>
+      <p>或</p>
+      <button id="go-private">创建私人房间 &raquo;</button>
     </form>
     <form id="chatroom" action="/fake-form-action">
       <div id="chatlog">
         <div id="spacer"></div>
       </div>
       <div id="roster"></div>
-      <input id="chat-input">
+      <input id="chat-input" placeholder="输入消息...">
     </form>
   </body>
 
 <!--===================================================================================-->
-<!-- Client-side JavaScript code for the app. -->
+<!-- 客户端JavaScript代码 -->
 
 <script type="text/javascript">
 let currentWebSocket = null;
@@ -213,7 +214,7 @@ let chatlog = document.querySelector("#chatlog");
 let chatInput = document.querySelector("#chat-input");
 let roster = document.querySelector("#roster");
 
-// Is the chatlog scrolled to the bottom?
+// 聊天窗口是否滚动到底部？
 let isAtBottom = true;
 
 let username;
@@ -221,7 +222,7 @@ let roomname;
 
 let hostname = window.location.host;
 if (hostname == "") {
-  // Probably testing the HTML locally.
+  // 可能是本地测试HTML文件
   hostname = "edge-chat-demo.cloudflareworkers.com";
 }
 
@@ -280,7 +281,7 @@ function startRoomChooser() {
 
     let response = await fetch("https://" + hostname + "/api/room", {method: "POST"});
     if (!response.ok) {
-      alert("something went wrong");
+      alert("出现错误");
       document.location.reload();
       return;
     }
@@ -295,11 +296,11 @@ function startRoomChooser() {
 function startChat() {
   roomForm.remove();
 
-  // Normalize the room name a bit.
+  // 对房间名称进行规范化处理
   roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
 
   if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
-    addChatMessage("ERROR", "Invalid room name.");
+    addChatMessage("错误", "无效的房间名称。");
     return;
   }
 
@@ -307,16 +308,16 @@ function startChat() {
 
   chatInput.addEventListener("keydown", event => {
     if (event.keyCode == 38) {
-      // up arrow
+      // 上箭头
       chatlog.scrollBy(0, -50);
     } else if (event.keyCode == 40) {
-      // down arrow
+      // 下箭头
       chatlog.scrollBy(0, 50);
     } else if (event.keyCode == 33) {
-      // page up
+      // 向上翻页
       chatlog.scrollBy(0, -chatlog.clientHeight + 50);
     } else if (event.keyCode == 34) {
-      // page down
+      // 向下翻页
       chatlog.scrollBy(0, chatlog.clientHeight - 50);
     }
   });
@@ -328,7 +329,7 @@ function startChat() {
       currentWebSocket.send(JSON.stringify({message: chatInput.value}));
       chatInput.value = "";
 
-      // Scroll to bottom whenever sending a message.
+      // 发送消息时自动滚动到底部
       chatlog.scrollBy(0, 1e8);
     }
   });
@@ -345,14 +346,13 @@ function startChat() {
 
   chatInput.focus();
   document.body.addEventListener("click", event => {
-    // If the user clicked somewhere in the window without selecting any text, focus the chat
-    // input.
+    // 如果用户点击窗口但没有选中任何文本，则将焦点放在聊天输入框
     if (window.getSelection().toString() == "") {
       chatInput.focus();
     }
   });
 
-  // Detect mobile keyboard appearing and disappearing, and adjust the scroll as appropriate.
+  // 检测移动设备键盘的显示/隐藏，并相应调整滚动位置
   if('visualViewport' in window) {
     window.visualViewport.addEventListener('resize', function(event) {
       if (isAtBottom) {
@@ -368,7 +368,7 @@ let lastSeenTimestamp = 0;
 let wroteWelcomeMessages = false;
 
 function join() {
-  // If we are running via wrangler dev, use ws:
+  // 如果通过wrangler dev运行，使用ws:
   const wss = document.location.protocol === "http:" ? "ws://" : "wss://";
   let ws = new WebSocket(wss + hostname + "/api/room/" + roomname + "/websocket");
   let rejoined = false;
@@ -379,19 +379,19 @@ function join() {
       rejoined = true;
       currentWebSocket = null;
 
-      // Clear the roster.
+      // 清空在线用户列表
       while (roster.firstChild) {
         roster.removeChild(roster.firstChild);
       }
 
-      // Don't try to reconnect too rapidly.
+      // 避免过快重连
       let timeSinceLastJoin = Date.now() - startTime;
       if (timeSinceLastJoin < 10000) {
-        // Less than 10 seconds elapsed since last join. Pause a bit.
+        // 距离上次连接不足10秒，稍作等待
         await new Promise(resolve => setTimeout(resolve, 10000 - timeSinceLastJoin));
       }
 
-      // OK, reconnect now!
+      // 现在重新连接！
       join();
     }
   }
@@ -399,7 +399,7 @@ function join() {
   ws.addEventListener("open", event => {
     currentWebSocket = ws;
 
-    // Send user info message.
+    // 发送用户信息
     ws.send(JSON.stringify({name: username}));
   });
 
@@ -407,7 +407,7 @@ function join() {
     let data = JSON.parse(event.data);
 
     if (data.error) {
-      addChatMessage(null, "* Error: " + data.error);
+      addChatMessage(null, "* 错误: " + data.error);
     } else if (data.joined) {
       let p = document.createElement("p");
       p.innerText = data.joined;
@@ -420,26 +420,26 @@ function join() {
         }
       }
     } else if (data.ready) {
-      // All pre-join messages have been delivered.
+      // 所有加入前的消息都已传送完毕
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
         addChatMessage(null,
-            "* This is a demo app built with Cloudflare Workers Durable Objects. The source code " +
-            "can be found at: https://github.com/cloudflare/workers-chat-demo");
+            "* 这是一个使用Cloudflare Workers Durable Objects构建的演示应用。" +
+            "源代码可以在以下地址找到: https://github.com/cloudflare/workers-chat-demo");
         addChatMessage(null,
-            "* WARNING: Participants in this chat are random people on the internet. " +
-            "Names are not authenticated; anyone can pretend to be anyone. The people " +
-            "you are chatting with are NOT Cloudflare employees. Chat history is saved.");
+            "* 警告: 聊天室参与者是互联网上的随机用户。" +
+            "名称未经认证；任何人都可以冒充他人。与你聊天的人" +
+            "并非Cloudflare员工。聊天记录会被保存。");
         if (roomname.length == 64) {
           addChatMessage(null,
-              "* This is a private room. You can invite someone to the room by sending them the URL.");
+              "* 这是一个私人房间。你可以通过分享URL邀请他人加入。");
         } else {
           addChatMessage(null,
-              "* Welcome to #" + roomname + ". Say hi!");
+              "* 欢迎来到 #" + roomname + " 房间！打个招呼吧！");
         }
       }
     } else {
-      // A regular chat message.
+      // 常规聊天消息
       if (data.timestamp > lastSeenTimestamp) {
         addChatMessage(data.name, data.message);
         lastSeenTimestamp = data.timestamp;
@@ -448,11 +448,11 @@ function join() {
   });
 
   ws.addEventListener("close", event => {
-    console.log("WebSocket closed, reconnecting:", event.code, event.reason);
+    console.log("WebSocket连接关闭，正在重新连接:", event.code, event.reason);
     rejoin();
   });
   ws.addEventListener("error", event => {
-    console.log("WebSocket error, reconnecting:", event);
+    console.log("WebSocket错误，正在重新连接:", event);
     rejoin();
   });
 }
@@ -467,9 +467,8 @@ function addChatMessage(name, text) {
   }
   p.appendChild(document.createTextNode(text));
 
-  // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
-  // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
-  // change.
+  // 添加新的聊天行，确保如果聊天记录之前已滚动到底部，
+  // 则保持底部位置，否则不改变滚动位置
   chatlog.appendChild(p);
   if (isAtBottom) {
     chatlog.scrollBy(0, 1e8);
