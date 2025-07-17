@@ -1,4 +1,4 @@
-name = "edge-chat-demo"
+name = "cloudflare-workers-chat"
 compatibility_date = "2024-01-01"
 
 main = "src/chat.mjs"
