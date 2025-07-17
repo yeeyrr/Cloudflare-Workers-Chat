@@ -16,6 +16,41 @@
 
 更多细节，请查看代码！代码中有详细的注释。
 
+## 相对于源代码添加的功能
+
+支持清空指定聊天室的聊天记录
+1.前置要求cf设置环境变量
+
+ADMIN_SECRET_KEY="你设置的uuid"（例如262f08d8-ade6-4e52-8778-d2f982e094bc）
+
+ALL_ROOM_NAMES=""(可选，仅在批量清空指定房间聊天记录时需要设置。示例值： general,my-private-room,public-chat)
+重要： 只有通过 idFromName 创建的、并且你在 ALL_ROOM_NAMES 中列出的房间才会被清空。如果你主要使用 newUniqueId() 创建的房间（即 ID 是 UUID 字符串），那么这个“清空所有房间”的功能将无法清空这些动态 ID 的房间，你需要使用 /api/admin/clear-room/<UUID> 接口清空它们。
+
+2.清空特定房间的聊天记录(因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)：
+
+URL 格式：https://你的项目域名.workers.dev/api/admin/clear-room/你的房间名称或ID?key=你设置的UUID密钥
+
+示例：https://my-chat-app.workers.dev/api/admin/clear-room/general?key=c1d2e3f4-a5b6-7c8d-9e0f-1a2b3c4d5e6f
+
+直接在浏览器中访问。
+
+清空所有已知房间的聊天记录：
+
+URL 格式：https://你的项目域名.workers.dev/api/admin/clear-all-rooms?key=你设置的UUID密钥
+
+示例：https://my-chat-app.workers.dev/api/admin/clear-all-rooms?key=c1d2e3f4-a5b6-7c8d-9e0f-1a2b3c4d5e6f
+
+直接在浏览器中访问。请确保 ALL_ROOM_NAMES 环境变量已正确设置。
+
+清空特定 IP 的速率限制：
+
+URL 格式：https://你的项目域名.workers.dev/api/admin/clear-rate-limit-ip?key=你设置的UUID密钥&ip=要清空的IP地址
+
+示例：https://my-chat-app.workers.dev/api/admin/clear-rate-limit-ip?key=c1d2e3f4-a5b6-7c8d-9e0f-1a2b3c4d5e6f&ip=192.168.1.1
+
+直接在浏览器中访问。
+
+
 ## 更新说明
 
 此示例最初使用 [WebSocket API](https://developers.cloudflare.com/workers/runtime-apis/websockets/) 编写，后来[修改](https://github.com/cloudflare/workers-chat-demo/pull/32)为使用 [WebSocket 休眠 API](https://developers.cloudflare.com/durable-objects/api/websockets/#websocket-hibernation)，这是 Durable Objects 独有的功能。
