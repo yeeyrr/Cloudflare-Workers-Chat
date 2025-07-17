@@ -1,4 +1,4 @@
-# Cloudflare 边缘聊天演示
+# Cloudflare 边缘聊天演示-汉化版
 
 这是一个基于 [Cloudflare Workers](https://workers.cloudflare.com/) 并使用 [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) 实现的实时聊天应用演示，具有消息历史存储功能。该应用 100% 运行在 Cloudflare 的边缘网络上。
 
@@ -31,7 +31,7 @@
 * [Durable Object WebSocket 文档](https://developers.cloudflare.com/durable-objects/reference/websockets/)
 
 ## 自行部署
-本人部署经验：cf-worker和page-创建worker-链接到github项目(本项目)
+本人部署经验：cf-worker和page-创建worker-链接到github项目-worker项目名称cloudflare-workers-chat(如果要自定义名称请同步修改wrangler.toml里面的name=“ ”)
             部署命令npx wrangler deploy，其他留空，部署即可
 
 这是官方教程：
