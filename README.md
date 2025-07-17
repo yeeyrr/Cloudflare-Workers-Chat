@@ -2,7 +2,7 @@
 
 这是一个基于 [Cloudflare Workers](https://workers.cloudflare.com/) 并使用 [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) 实现的实时聊天应用演示，具有消息历史存储功能。该应用 100% 运行在 Cloudflare 的边缘网络上。
 
-立即体验: https://edge-chat-demo.cloudflareworkers.com（体验版本为官方英文版，界面未汉化，无清空聊天功能）
+立即体验: https://edge-chat-demo.cloudflareworkers.com （体验版本为官方英文版，界面未汉化，无清空聊天功能）
 
 这个演示的独特之处在于它处理了状态问题。在 Durable Objects 出现之前，Workers 是无状态的，状态必须存储在别处。状态不仅意味着存储，还意味着协调能力。在聊天室中，当一个用户发送消息时，应用必须通过其他用户已经建立的连接将消息路由给他们。这些连接就是状态，在无状态框架中协调它们非常困难甚至不可能。
 
