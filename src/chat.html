@@ -178,7 +178,7 @@ p:last-of-type {
   </head>
   <body>
     <form id="name-form" action="/fake-form-action">
-      <input id="name-input" placeholder="你的名字">
+      <input id="name-input" placeholder="你的名字">//你的名字
       <p>此聊天应用完全运行在边缘网络，由<br>
         <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a>提供技术支持</p>
     </form>
@@ -424,12 +424,12 @@ function join() {
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
         addChatMessage(null,
-            "* 这是一个使用Cloudflare Workers Durable Objects构建的演示应用。" +
-            "源代码可以在以下地址找到: https://github.com/cloudflare/workers-chat-demo");
+            "* 这是一个部署在云端的网页聊天室。" +//这是一个使用Cloudflare Workers Durable Objects构建的演示应用。
+            //"源代码可以在以下地址找到: https://github.com/cloudflare/workers-chat-demo");
         addChatMessage(null,
             "* 警告: 聊天室参与者是互联网上的随机用户。" +
-            "名称未经认证；任何人都可以冒充他人。与你聊天的人" +
-            "并非Cloudflare员工。聊天记录会被保存。");
+            "所有名称都是匿名的，任何人都可以使用相同名称，请注意分辨" +//名称未经认证；任何人都可以冒充他人。与你聊天的人
+            //"并非Cloudflare员工。聊天记录会被保存。");
         if (roomname.length == 64) {
           addChatMessage(null,
               "* 这是一个私人房间。你可以通过分享URL邀请他人加入。");
