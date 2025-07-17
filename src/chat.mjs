@@ -153,10 +153,19 @@ async function handleApiRequest(path, request, env) {
 
       const requestKey = url.searchParams.get("key"); // 从查询参数获取密钥
 
+      // ===========================================================================================
+      // VVVV 这是修改的部分 VVVV
+      // 为 ADMIN_SECRET_KEY 设置默认值，如果环境变量未设置则使用此值
+      // 请务必将 "del" 替换为你希望的默认密钥，这个密钥将用来清空聊天室的聊天记录和ip速率限制。建议在在cf中设置变量ADMIN_SECRET_KEY=替换
+      const actualAdminSecretKey = env.ADMIN_SECRET_KEY || "del"; 
+
       // 验证密钥
-      if (!env.ADMIN_SECRET_KEY || requestKey !== env.ADMIN_SECRET_KEY) {
+      // 现在只需要比较 requestKey 和 actualAdminSecretKey
+      if (requestKey !== actualAdminSecretKey) {
         return new Response("未经授权。密钥不匹配或未设置。", { status: 401 });
       }
+      // ^^^^ 这是修改的部分 ^^^^
+      // ===========================================================================================
 
       switch (path[1]) {
         case "clear-room": {
@@ -198,83 +207,7 @@ async function handleApiRequest(path, request, env) {
         case "clear-rate-limits": {
             // 允许 GET 请求清空所有速率限制
             try {
-                // 列出所有 RateLimiter Durable Object 实例
-                // 注意：Durable Objects 不提供直接列出所有实例的方法
-                // 最简单有效的方式是遍历所有已知的命名实例。
-                // 如果你有很多动态创建的 RateLimiter，这会复杂。
-                // 但对于通常按IP地址命名的 RateLimiter，这种方式意味着
-                // 你会清空所有曾经被访问过的 RateLimiter 实例。
-                // 
-                // 为了演示清空所有 Durable Object 命名空间中的数据：
-                // 这需要 Cloudflare 提供一个 API，但目前 Workers DO 无法直接从 Worker 清空整个命名空间。
-                // 如果要清空整个 Durable Object 命名空间，你需要回退到通过 Cloudflare UI 删除命名空间
-                // 或者通过 wrangler CLI 命令进行操作。
-                // 
-                // 但是，我们可以通过遍历 RateLimiter 的内部存储来清空它，
-                // 但 RateLimiter 的设计只存储 `nextAllowedTime`，每次访问都会更新，
-                // 并没有多个 key-value 对来表示多个用户。
-                //
-                // 所以，清空 RateLimiter 命名空间中的所有 DO 实例的存储，
-                // 唯一方法是迭代所有实例并调用它们的清空方法。
-                // 
-                // ⚠️ 警告：目前 Workers API 没有直接的办法迭代 Durable Object 命名空间中的所有 ID。
-                // 所以，我们无法“一键”清空所有 RateLimiter 实例的存储。
-                // 
-                // 最实际的“清空速率限制”方案是：
-                // 1. 对于一个 IP 地址，当它请求时，会获取一个特定的 RateLimiter DO 实例。
-                // 2. 我们可以为每个 RateLimiter 实例添加一个 `clearLimit()` 方法。
-                // 3. 但我们无法从 Worker 层面知道所有存在的 RateLimiter 实例 ID。
-                //
-                // 因此，最简单有效的方式就是通过`idFromName`方法，
-                // 为管理员提供一个清除特定IP（或一组特定IP）速率限制的接口。
-                // 但如果想清除所有IP的，则需要迭代所有可能的IP，或者更粗暴地删除整个RateLimiter DO。
-                //
-                // 考虑到我们无法知道所有 RateLimiter 实例的 ID，
-                // 最接近“清空所有速率限制”的策略是：
-                // 修改 RateLimiter 的逻辑，让它在某个特定条件（如接收到特殊请求）下，
-                // 自动重置其 `nextAllowedTime`。
-                //
-                // 但是，为了符合你“清空RateLimiter”的要求，并且考虑到DO的特性，
-                // 我们假定管理员会针对性地清空“热点IP”的速率限制，或者接受
-                // “无法一次性清空所有IP速率限制”的局限性。
-                //
-                // 另一种理解“清空RateLimiter”是删除整个 RateLimiter DO 的命名空间。
-                // 这可以通过 Cloudflare UI 或 Wrangler CLI 完成，无法通过 Worker API 实现。
-                //
-                // 考虑到目前的 API 限制，我们只能做到：
-                // 如果你想清空所有速率限制，你需要删除 `limiters` 命名空间，
-                // 或者修改 `RateLimiter` 内部逻辑，让它有一个过期机制。
-                //
-                // **为了给你一个可行的代码实现，我们将清空 `RateLimiter` 的功能暂时简化为：**
-                // **它将尝试清空所有已知的 RateLimiter 实例的存储。**
-                // **但由于无法获取所有实例 ID，这个功能实际上是有限的。**
-                // **如果你需要真正的“清空所有”，最好的办法是删除 Durable Object 命名空间。**
-
-                // 为了模拟清空所有 RateLimiter 实例的数据，我们尝试调用一个通用的清空方法
-                // 这个方法将在 RateLimiter 类中实现，并且由于 DO 是按 ID 实例化的，
-                // 我们只能清空某个特定 ID 的 RateLimiter。
-                // 所以，这里我们会调用一个“清空特定 RateLimiter”的接口。
-                //
-                // 如果你需要清空所有IP的速率限制，
-                // 最佳实践是删除 `limiters` 的 Durable Object 命名空间。
-                // 但是，我们可以在 RateLimiter 类中添加一个方法，来清除它自己的存储。
-
-                // 我们将添加一个 /clear-limiters 路由到 RateLimiter Durable Object
-                // 并调用一个虚拟的 RateLimiter 实例来触发清空（如果它有这个功能）。
-                // 但更准确的做法是，如果我们想清空所有 RateLimiter 实例，
-                // 我们需要一个管理接口来迭代所有 RateLimiter ID 并调用清空。
-                // 这是目前 Cloudflare DO API 的局限。
-
-                // 最直接的实现是，我们假设你只希望解除某个IP的速率限制，
-                // 或者，我们可以设计一个通用的 RateLimiter 清空功能，
-                // 但它不会清空所有存在的 RateLimiter DO 实例，只会清空一个“默认”实例。
-                //
-                // **为了实现你“清空 RateLimiter”的需求，我将为 `RateLimiter` 添加一个 `clearLimit()` 方法**
-                // **并提供一个接口，允许你针对特定的 RateLimiter ID（通常是 IP 地址）进行清空。**
-                // **因为无法直接获取所有 RateLimiter ID，所以无法“一键清空所有用户”的速率限制，**
-                // **除非你删除整个 `limiters` DO 命名空间（在 Cloudflare UI 操作）。**
-                //
-                // **我们现在实现的是清空特定 RateLimiter 的功能**
+                // 我们现在实现的是清空特定 RateLimiter 的功能
                 const targetIp = url.searchParams.get("ip"); // 允许指定要清空的IP
                 if (!targetIp) {
                   return new Response("请提供要清空速率限制的 IP 地址。", { status: 400 });
