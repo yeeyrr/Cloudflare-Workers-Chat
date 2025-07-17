@@ -20,7 +20,7 @@
 
 支持清空指定聊天室的聊天记录(相对于官方源代码新增功能。因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)
 
-1.前置要求cf-项目worker-设置-环境变量(每次新部署，变量需要重新设置)
+1.前置要求cf-项目worker-设置-环境变量(每次新部署，变量需要重新设置。如不设置默认ADMIN_SECRET_KEY="del")
 
 ADMIN_SECRET_KEY="你设置的uuid"（例：c1d2e3f4-a5b6-7c8d-9e0f-1a2b3c4d5e6f）
 
