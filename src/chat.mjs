@@ -28,6 +28,10 @@
 // * rooms: 映射到 ChatRoom 类的 Durable Object 命名空间绑定
 // * limiters: 映射到 RateLimiter 类的 Durable Object 命名空间绑定
 //
+// 新增：
+// * ADMIN_SECRET_KEY: 用于清空聊天记录和速率限制的密钥（在 Cloudflare Worker 设置中配置）
+// * ALL_ROOM_NAMES: 一个逗号分隔的房间名称列表，用于“清空所有房间”（可选，如果你的房间名是动态UUID则不需要）
+//
 // 在模块化语法中，绑定通过"环境对象"传递，而不是作为全局变量。
 // 这是为了更好的代码组合性。
 
@@ -57,8 +61,22 @@ async function handleErrors(request, func) {
   }
 }
 
+// 定义环境接口，包含 Durable Object 绑定和自定义变量
+// 这有助于 TypeScript 检查，但对于纯 JavaScript 来说不是必需的
+/**
+ * @typedef {Object} Env
+ * @property {DurableObjectNamespace} rooms
+ * @property {DurableObjectNamespace} limiters
+ * @property {string} ADMIN_SECRET_KEY
+ * @property {string | undefined} ALL_ROOM_NAMES // 新增：所有已知房间名称的逗号分隔字符串
+ */
+
 // 使用 `export default` 导出主要的 fetch 事件处理器
 export default {
+  /**
+   * @param {Request} request
+   * @param {Env} env
+   */
   async fetch(request, env) {
     return await handleErrors(request, async () => {
       // 解析 URL 并路由请求
@@ -83,7 +101,14 @@ export default {
 }
 
 // 处理 API 请求
+/**
+ * @param {string[]} path
+ * @param {Request} request
+ * @param {Env} env
+ */
 async function handleApiRequest(path, request, env) {
+  const url = new URL(request.url);
+
   switch (path[0]) {
     case "room": {
       // 处理 `/api/room/...` 请求
@@ -120,6 +145,127 @@ async function handleApiRequest(path, request, env) {
       return roomObject.fetch(newUrl, request);
     }
 
+    case "admin": {
+      // =======================================================
+      // 新增：处理 `/api/admin/...` 请求用于管理操作
+      // =======================================================
+      // 路由示例：
+      //   - 清空特定房间聊天记录：/api/admin/clear-room/<room_name_or_id>?key=<ADMIN_SECRET_KEY>
+      //   - 清空所有已知房间聊天记录：/api/admin/clear-all-rooms?key=<ADMIN_SECRET_KEY>
+      //   - 清空特定IP速率限制：/api/admin/clear-rate-limit-ip?key=<ADMIN_SECRET_KEY>&ip=<IP_ADDRESS>
+
+      const requestKey = url.searchParams.get("key"); // 从查询参数获取密钥
+
+      // 验证密钥
+      if (!env.ADMIN_SECRET_KEY || requestKey !== env.ADMIN_SECRET_KEY) {
+        return new Response("未经授权。密钥不匹配或未设置。", { status: 401 });
+      }
+
+      switch (path[1]) {
+        case "clear-room": {
+          // 清空特定房间聊天记录
+          const roomId = path[2]; // 获取房间名称或 ID
+
+          if (!roomId) {
+            return new Response("请提供要清空的房间名称或 ID。", { status: 400 });
+          }
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+              id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+              id = env.rooms.idFromName(roomId);
+          } else {
+              return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            const clearResponse = await roomObject.fetch(new URL("https://dummy-url/clear-messages"));
+
+            if (clearResponse.ok) {
+              return new Response(`房间 '${roomId}' 的聊天记录已清空。`, { status: 200 });
+            } else {
+              const errorText = await clearResponse.text();
+              return new Response(`清空失败：${errorText}`, { status: clearResponse.status });
+            }
+          } catch (error) {
+            console.error("清空聊天记录时发生错误:", error);
+            return new Response(`清空聊天记录时发生内部错误: ${error.message}`, { status: 500 });
+          }
+        }
+
+        case "clear-all-rooms": {
+            // ===========================================================
+            // 新增：清空所有已知房间的聊天记录
+            // ===========================================================
+            if (!env.ALL_ROOM_NAMES) {
+                return new Response("未配置 ALL_ROOM_NAMES 环境变量。", { status: 400 });
+            }
+
+            const roomNames = env.ALL_ROOM_NAMES.split(',').map(name => name.trim()).filter(name => name.length > 0);
+            if (roomNames.length === 0) {
+                return new Response("ALL_ROOM_NAMES 环境变量中没有有效的房间名称。", { status: 400 });
+            }
+
+            const results = {};
+            for (const roomName of roomNames) {
+                let id;
+                if (roomName.match(/^[0-9a-f]{64}$/)) {
+                    id = env.rooms.idFromString(roomName);
+                } else { // 假设默认是字符串名称
+                    id = env.rooms.idFromName(roomName);
+                }
+                
+                try {
+                    let roomObject = env.rooms.get(id);
+                    const clearResponse = await roomObject.fetch(new URL("https://dummy-url/clear-messages"));
+                    if (clearResponse.ok) {
+                        results[roomName] = "成功";
+                    } else {
+                        results[roomName] = `失败: ${await clearResponse.text()}`;
+                    }
+                } catch (error) {
+                    console.error(`清空房间 ${roomName} 记录时发生错误:`, error);
+                    results[roomName] = `错误: ${error.message}`;
+                }
+            }
+            return new Response(`所有房间聊天记录清空结果: ${JSON.stringify(results)}`, { status: 200 });
+        }
+
+
+        case "clear-rate-limit-ip": {
+            // ===========================================================
+            // 新增：清空特定 IP 的速率限制
+            // ===========================================================
+            const targetIp = url.searchParams.get("ip"); // 允许指定要清空的IP
+            if (!targetIp) {
+              return new Response("请提供要清空速率限制的 IP 地址。", { status: 400 });
+            }
+
+            let limiterId = env.limiters.idFromName(targetIp);
+            let limiterObject = env.limiters.get(limiterId);
+
+            try {
+              const clearResponse = await limiterObject.fetch(new URL("https://dummy-url/clear-limit"));
+              
+              if (clearResponse.ok) {
+                return new Response(`IP '${targetIp}' 的速率限制已清空。`, { status: 200 });
+              } else {
+                const errorText = await clearResponse.text();
+                return new Response(`清空IP速率限制失败：${errorText}`, { status: clearResponse.status });
+              }
+            } catch (error) {
+                console.error("清空速率限制时发生错误:", error);
+                return new Response(`清空速率限制时发生内部错误: ${error.message}`, { status: 500 });
+            }
+        }
+
+        default:
+          return new Response("未找到管理操作。", { status: 404 });
+      }
+    }
+
     default:
       return new Response("未找到", {status: 404});
   }
@@ -130,6 +276,10 @@ async function handleApiRequest(path, request, env) {
 
 // ChatRoom 实现了一个协调单个聊天室的 Durable Object
 export class ChatRoom {
+  /**
+   * @param {DurableObjectState} state
+   * @param {Env} env
+   */
   constructor(state, env) {
     this.state = state;
     this.storage = state.storage;  // 提供对持久存储的访问
@@ -152,6 +302,9 @@ export class ChatRoom {
   }
 
   // 处理发送到此对象的 HTTP 请求
+  /**
+   * @param {Request} request
+   */
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
@@ -168,6 +321,14 @@ export class ChatRoom {
           await this.handleSession(pair[1], ip);
           return new Response(null, { status: 101, webSocket: pair[0] });
         }
+        // =======================================================
+        // 新增：处理来自 Worker 的清空消息请求（现在允许 GET）
+        // =======================================================
+        case "/clear-messages": {
+          // 不再检查 request.method，允许 GET 请求触发清空
+          await this.clearAllMessages();
+          return new Response("聊天记录已清空。", { status: 200 });
+        }
 
         default:
           return new Response("未找到", {status: 404});
@@ -175,7 +336,25 @@ export class ChatRoom {
     });
   }
 
+  // =======================================================
+  // 新增：清空所有聊天记录的方法
+  // =======================================================
+  async clearAllMessages() {
+    // 调用 Durable Object 存储的 deleteAll() 方法来清空所有数据
+    await this.storage.deleteAll();
+    console.log(`Durable Object ID: ${this.state.id} - 所有聊天记录已清空。`);
+    // 清空内存中的会话列表（已连接的 WebSocket），虽然它们会在断开后消失
+    // 这里清空主要是为了逻辑清晰，实际会话需要客户端重新连接或发送消息来更新状态
+    this.sessions.clear(); 
+    this.lastTimestamp = 0; // 重置时间戳
+  }
+
+
   // 实现基于 WebSocket 的聊天协议
+  /**
+   * @param {WebSocket} webSocket
+   * @param {string} ip
+   */
   async handleSession(webSocket, ip) {
     this.state.acceptWebSocket(webSocket);
 
@@ -207,6 +386,10 @@ export class ChatRoom {
   }
 
   // 处理 WebSocket 消息
+  /**
+   * @param {WebSocket} webSocket
+   * @param {string} msg
+   */
   async webSocketMessage(webSocket, msg) {
     try {
       let session = this.sessions.get(webSocket);
@@ -325,31 +508,76 @@ export class ChatRoom {
 
 // RateLimiter 实现了一个跟踪消息频率并决定何时丢弃消息的 Durable Object
 export class RateLimiter {
+  /**
+   * @param {DurableObjectState} state
+   * @param {Env} env
+   */
   constructor(state, env) {
+    this.state = state; // 需要 state 来访问 storage
+    this.storage = state.storage;
     // 此IP下次允许发送消息的时间戳
     this.nextAllowedTime = 0;
+    // 在构造函数中加载 nextAllowedTime
+    this.loadState();
   }
 
-  // 协议：POST 表示IP执行了操作，GET 只读取当前限制
+  async loadState() {
+    const storedTime = await this.storage.get("nextAllowedTime");
+    if (storedTime) {
+      this.nextAllowedTime = storedTime;
+    }
+  }
+
+  // 处理发送到此对象的 HTTP 请求
+  /**
+   * @param {Request} request
+   */
   async fetch(request) {
     return await handleErrors(request, async () => {
-      let now = Date.now() / 1000;
-      this.nextAllowedTime = Math.max(now, this.nextAllowedTime);
+      let url = new URL(request.url);
 
-      if (request.method == "POST") {
-        // 每5秒允许一个操作
-        this.nextAllowedTime += 5;
+      switch (url.pathname) {
+        case "/clear-limit": {
+          // =======================================================
+          // 新增：清空当前 RateLimiter 实例的速率限制
+          // =======================================================
+          // 不再检查 request.method，允许 GET 请求触发清空
+          await this.clearLimit();
+          return new Response("速率限制已清空。", { status: 200 });
+        }
+        default:
+          let now = Date.now() / 1000;
+          this.nextAllowedTime = Math.max(now, this.nextAllowedTime);
+    
+          if (request.method == "POST") {
+            // 每5秒允许一个操作
+            this.nextAllowedTime += 5;
+            await this.storage.put("nextAllowedTime", this.nextAllowedTime); // 保存状态
+          }
+    
+          // 返回客户端需要等待的秒数
+          let cooldown = Math.max(0, this.nextAllowedTime - now - 20);
+          return new Response(cooldown);
       }
-
-      // 返回客户端需要等待的秒数
-      let cooldown = Math.max(0, this.nextAllowedTime - now - 20);
-      return new Response(cooldown);
     })
+  }
+
+  // =======================================================
+  // 新增：清空当前 Durable Object 实例的速率限制
+  // =======================================================
+  async clearLimit() {
+    await this.storage.delete("nextAllowedTime"); // 删除特定键
+    this.nextAllowedTime = 0; // 重置内存中的值
+    console.log(`RateLimiter ID: ${this.state.id} - 速率限制已清空。`);
   }
 }
 
 // RateLimiterClient 在调用方实现速率限制逻辑
 class RateLimiterClient {
+  /**
+   * @param {function(): DurableObjectStub} getLimiterStub
+   * @param {function(Error): void} reportError
+   */
   constructor(getLimiterStub, reportError) {
     this.getLimiterStub = getLimiterStub;
     this.reportError = reportError;
