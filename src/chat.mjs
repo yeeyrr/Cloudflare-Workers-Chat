@@ -28,9 +28,6 @@
 // * rooms: 映射到 ChatRoom 类的 Durable Object 命名空间绑定
 // * limiters: 映射到 RateLimiter 类的 Durable Object 命名空间绑定
 //
-// 新增：
-// * ADMIN_SECRET_KEY: 用于清空聊天记录和速率限制的密钥（在 Cloudflare Worker 设置中配置）
-//
 // 在模块化语法中，绑定通过"环境对象"传递，而不是作为全局变量。
 // 这是为了更好的代码组合性。
 
@@ -60,21 +57,8 @@ async function handleErrors(request, func) {
   }
 }
 
-// 定义环境接口，包含 Durable Object 绑定和自定义变量
-// 这有助于 TypeScript 检查，但对于纯 JavaScript 来说不是必需的
-/**
- * @typedef {Object} Env
- * @property {DurableObjectNamespace} rooms
- * @property {DurableObjectNamespace} limiters
- * @property {string} ADMIN_SECRET_KEY
- */
-
 // 使用 `export default` 导出主要的 fetch 事件处理器
 export default {
-  /**
-   * @param {Request} request
-   * @param {Env} env
-   */
   async fetch(request, env) {
     return await handleErrors(request, async () => {
       // 解析 URL 并路由请求
@@ -99,14 +83,7 @@ export default {
 }
 
 // 处理 API 请求
-/**
- * @param {string[]} path
- * @param {Request} request
- * @param {Env} env
- */
 async function handleApiRequest(path, request, env) {
-  const url = new URL(request.url);
-
   switch (path[0]) {
     case "room": {
       // 处理 `/api/room/...` 请求
@@ -143,165 +120,6 @@ async function handleApiRequest(path, request, env) {
       return roomObject.fetch(newUrl, request);
     }
 
-    case "admin": {
-      // =======================================================
-      // 新增：处理 `/api/admin/...` 请求用于管理操作
-      // =======================================================
-      // 路由示例：
-      //   - 清空房间聊天记录：/api/admin/clear-room/<room_name_or_id>?key=<ADMIN_SECRET_KEY>
-      //   - 清空所有速率限制：/api/admin/clear-rate-limits?key=<ADMIN_SECRET_KEY>
-
-      const requestKey = url.searchParams.get("key"); // 从查询参数获取密钥
-
-      // 验证密钥
-      if (!env.ADMIN_SECRET_KEY || requestKey !== env.ADMIN_SECRET_KEY) {
-        return new Response("未经授权。密钥不匹配或未设置。", { status: 401 });
-      }
-
-      switch (path[1]) {
-        case "clear-room": {
-          // 允许 GET 请求清空房间聊天记录
-          const roomId = path[2]; // 获取房间名称或 ID
-
-          if (!roomId) {
-            return new Response("请提供要清空的房间名称或 ID。", { status: 400 });
-          }
-
-          let id;
-          if (roomId.match(/^[0-9a-f]{64}$/)) {
-              id = env.rooms.idFromString(roomId);
-          } else if (roomId.length <= 32) {
-              id = env.rooms.idFromName(roomId);
-          } else {
-              return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
-          }
-
-          try {
-            let roomObject = env.rooms.get(id);
-            // 调用 Durable Object 上的清空方法
-            // 我们这里调用 /clear-messages 路径来触发清空操作
-            // 为了GET请求能清空，我们将 DO fetch 的方法校验也改为 GET
-            const clearResponse = await roomObject.fetch(new URL("https://dummy-url/clear-messages"));
-
-            if (clearResponse.ok) {
-              return new Response(`房间 '${roomId}' 的聊天记录已清空。`, { status: 200 });
-            } else {
-              const errorText = await clearResponse.text();
-              return new Response(`清空失败：${errorText}`, { status: clearResponse.status });
-            }
-          } catch (error) {
-            console.error("清空聊天记录时发生错误:", error);
-            return new Response(`清空聊天记录时发生内部错误: ${error.message}`, { status: 500 });
-          }
-        }
-
-        case "clear-rate-limits": {
-            // 允许 GET 请求清空所有速率限制
-            try {
-                // 列出所有 RateLimiter Durable Object 实例
-                // 注意：Durable Objects 不提供直接列出所有实例的方法
-                // 最简单有效的方式是遍历所有已知的命名实例。
-                // 如果你有很多动态创建的 RateLimiter，这会复杂。
-                // 但对于通常按IP地址命名的 RateLimiter，这种方式意味着
-                // 你会清空所有曾经被访问过的 RateLimiter 实例。
-                // 
-                // 为了演示清空所有 Durable Object 命名空间中的数据：
-                // 这需要 Cloudflare 提供一个 API，但目前 Workers DO 无法直接从 Worker 清空整个命名空间。
-                // 如果要清空整个 Durable Object 命名空间，你需要回退到通过 Cloudflare UI 删除命名空间
-                // 或者通过 wrangler CLI 命令进行操作。
-                // 
-                // 但是，我们可以通过遍历 RateLimiter 的内部存储来清空它，
-                // 但 RateLimiter 的设计只存储 `nextAllowedTime`，每次访问都会更新，
-                // 并没有多个 key-value 对来表示多个用户。
-                //
-                // 所以，清空 RateLimiter 命名空间中的所有 DO 实例的存储，
-                // 唯一方法是迭代所有实例并调用它们的清空方法。
-                // 
-                // ⚠️ 警告：目前 Workers API 没有直接的办法迭代 Durable Object 命名空间中的所有 ID。
-                // 所以，我们无法“一键”清空所有 RateLimiter 实例的存储。
-                // 
-                // 最实际的“清空速率限制”方案是：
-                // 1. 对于一个 IP 地址，当它请求时，会获取一个特定的 RateLimiter DO 实例。
-                // 2. 我们可以为每个 RateLimiter 实例添加一个 `clearLimit()` 方法。
-                // 3. 但我们无法从 Worker 层面知道所有存在的 RateLimiter 实例 ID。
-                //
-                // 因此，最简单有效的方式就是通过`idFromName`方法，
-                // 为管理员提供一个清除特定IP（或一组特定IP）速率限制的接口。
-                // 但如果想清除所有IP的，则需要迭代所有可能的IP，或者更粗暴地删除整个RateLimiter DO。
-                //
-                // 考虑到我们无法知道所有 RateLimiter 实例的 ID，
-                // 最接近“清空所有速率限制”的策略是：
-                // 修改 RateLimiter 的逻辑，让它在某个特定条件（如接收到特殊请求）下，
-                // 自动重置其 `nextAllowedTime`。
-                //
-                // 但是，为了符合你“清空RateLimiter”的要求，并且考虑到DO的特性，
-                // 我们假定管理员会针对性地清空“热点IP”的速率限制，或者接受
-                // “无法一次性清空所有IP速率限制”的局限性。
-                //
-                // 另一种理解“清空RateLimiter”是删除整个 RateLimiter DO 的命名空间。
-                // 这可以通过 Cloudflare UI 或 Wrangler CLI 完成，无法通过 Worker API 实现。
-                //
-                // 考虑到目前的 API 限制，我们只能做到：
-                // 如果你想清空所有速率限制，你需要删除 `limiters` 命名空间，
-                // 或者修改 `RateLimiter` 内部逻辑，让它有一个过期机制。
-                //
-                // **为了给你一个可行的代码实现，我们将清空 `RateLimiter` 的功能暂时简化为：**
-                // **它将尝试清空所有已知的 RateLimiter 实例的存储。**
-                // **但由于无法获取所有实例 ID，这个功能实际上是有限的。**
-                // **如果你需要真正的“清空所有”，最好的办法是删除 Durable Object 命名空间。**
-
-                // 为了模拟清空所有 RateLimiter 实例的数据，我们尝试调用一个通用的清空方法
-                // 这个方法将在 RateLimiter 类中实现，并且由于 DO 是按 ID 实例化的，
-                // 我们只能清空某个特定 ID 的 RateLimiter。
-                // 所以，这里我们会调用一个“清空特定 RateLimiter”的接口。
-                //
-                // 如果你需要清空所有IP的速率限制，
-                // 最佳实践是删除 `limiters` 的 Durable Object 命名空间。
-                // 但是，我们可以在 RateLimiter 类中添加一个方法，来清除它自己的存储。
-
-                // 我们将添加一个 /clear-limiters 路由到 RateLimiter Durable Object
-                // 并调用一个虚拟的 RateLimiter 实例来触发清空（如果它有这个功能）。
-                // 但更准确的做法是，如果我们想清空所有 RateLimiter 实例，
-                // 我们需要一个管理接口来迭代所有 RateLimiter ID 并调用清空。
-                // 这是目前 Cloudflare DO API 的局限。
-
-                // 最直接的实现是，我们假设你只希望解除某个IP的速率限制，
-                // 或者，我们可以设计一个通用的 RateLimiter 清空功能，
-                // 但它不会清空所有存在的 RateLimiter DO 实例，只会清空一个“默认”实例。
-                //
-                // **为了实现你“清空 RateLimiter”的需求，我将为 `RateLimiter` 添加一个 `clearLimit()` 方法**
-                // **并提供一个接口，允许你针对特定的 RateLimiter ID（通常是 IP 地址）进行清空。**
-                // **因为无法直接获取所有 RateLimiter ID，所以无法“一键清空所有用户”的速率限制，**
-                // **除非你删除整个 `limiters` DO 命名空间（在 Cloudflare UI 操作）。**
-                //
-                // **我们现在实现的是清空特定 RateLimiter 的功能**
-                const targetIp = url.searchParams.get("ip"); // 允许指定要清空的IP
-                if (!targetIp) {
-                  return new Response("请提供要清空速率限制的 IP 地址。", { status: 400 });
-                }
-
-                let limiterId = env.limiters.idFromName(targetIp);
-                let limiterObject = env.limiters.get(limiterId);
-
-                const clearResponse = await limiterObject.fetch(new URL("https://dummy-url/clear-limit"));
-                
-                if (clearResponse.ok) {
-                  return new Response(`IP '${targetIp}' 的速率限制已清空。`, { status: 200 });
-                } else {
-                  const errorText = await clearResponse.text();
-                  return new Response(`清空IP速率限制失败：${errorText}`, { status: clearResponse.status });
-                }
-            } catch (error) {
-                console.error("清空速率限制时发生错误:", error);
-                return new Response(`清空速率限制时发生内部错误: ${error.message}`, { status: 500 });
-            }
-        }
-
-        default:
-          return new Response("未找到管理操作。", { status: 404 });
-      }
-    }
-
     default:
       return new Response("未找到", {status: 404});
   }
@@ -312,10 +130,6 @@ async function handleApiRequest(path, request, env) {
 
 // ChatRoom 实现了一个协调单个聊天室的 Durable Object
 export class ChatRoom {
-  /**
-   * @param {DurableObjectState} state
-   * @param {Env} env
-   */
   constructor(state, env) {
     this.state = state;
     this.storage = state.storage;  // 提供对持久存储的访问
@@ -338,9 +152,6 @@ export class ChatRoom {
   }
 
   // 处理发送到此对象的 HTTP 请求
-  /**
-   * @param {Request} request
-   */
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
@@ -357,14 +168,6 @@ export class ChatRoom {
           await this.handleSession(pair[1], ip);
           return new Response(null, { status: 101, webSocket: pair[0] });
         }
-        // =======================================================
-        // 新增：处理来自 Worker 的清空消息请求（现在允许 GET）
-        // =======================================================
-        case "/clear-messages": {
-          // 不再检查 request.method，允许 GET 请求触发清空
-          await this.clearAllMessages();
-          return new Response("聊天记录已清空。", { status: 200 });
-        }
 
         default:
           return new Response("未找到", {status: 404});
@@ -372,25 +175,7 @@ export class ChatRoom {
     });
   }
 
-  // =======================================================
-  // 新增：清空所有聊天记录的方法
-  // =======================================================
-  async clearAllMessages() {
-    // 调用 Durable Object 存储的 deleteAll() 方法来清空所有数据
-    await this.storage.deleteAll();
-    console.log(`Durable Object ID: ${this.state.id} - 所有聊天记录已清空。`);
-    // 清空内存中的会话列表（已连接的 WebSocket），虽然它们会在断开后消失
-    // 这里清空主要是为了逻辑清晰，实际会话需要客户端重新连接或发送消息来更新状态
-    this.sessions.clear(); 
-    this.lastTimestamp = 0; // 重置时间戳
-  }
-
-
   // 实现基于 WebSocket 的聊天协议
-  /**
-   * @param {WebSocket} webSocket
-   * @param {string} ip
-   */
   async handleSession(webSocket, ip) {
     this.state.acceptWebSocket(webSocket);
 
@@ -422,10 +207,6 @@ export class ChatRoom {
   }
 
   // 处理 WebSocket 消息
-  /**
-   * @param {WebSocket} webSocket
-   * @param {string} msg
-   */
   async webSocketMessage(webSocket, msg) {
     try {
       let session = this.sessions.get(webSocket);
@@ -544,76 +325,31 @@ export class ChatRoom {
 
 // RateLimiter 实现了一个跟踪消息频率并决定何时丢弃消息的 Durable Object
 export class RateLimiter {
-  /**
-   * @param {DurableObjectState} state
-   * @param {Env} env
-   */
   constructor(state, env) {
-    this.state = state; // 需要 state 来访问 storage
-    this.storage = state.storage;
     // 此IP下次允许发送消息的时间戳
     this.nextAllowedTime = 0;
-    // 在构造函数中加载 nextAllowedTime
-    this.loadState();
   }
 
-  async loadState() {
-    const storedTime = await this.storage.get("nextAllowedTime");
-    if (storedTime) {
-      this.nextAllowedTime = storedTime;
-    }
-  }
-
-  // 处理发送到此对象的 HTTP 请求
-  /**
-   * @param {Request} request
-   */
+  // 协议：POST 表示IP执行了操作，GET 只读取当前限制
   async fetch(request) {
     return await handleErrors(request, async () => {
-      let url = new URL(request.url);
+      let now = Date.now() / 1000;
+      this.nextAllowedTime = Math.max(now, this.nextAllowedTime);
 
-      switch (url.pathname) {
-        case "/clear-limit": {
-          // =======================================================
-          // 新增：清空当前 RateLimiter 实例的速率限制
-          // =======================================================
-          // 不再检查 request.method，允许 GET 请求触发清空
-          await this.clearLimit();
-          return new Response("速率限制已清空。", { status: 200 });
-        }
-        default:
-          let now = Date.now() / 1000;
-          this.nextAllowedTime = Math.max(now, this.nextAllowedTime);
-    
-          if (request.method == "POST") {
-            // 每5秒允许一个操作
-            this.nextAllowedTime += 5;
-            await this.storage.put("nextAllowedTime", this.nextAllowedTime); // 保存状态
-          }
-    
-          // 返回客户端需要等待的秒数
-          let cooldown = Math.max(0, this.nextAllowedTime - now - 20);
-          return new Response(cooldown);
+      if (request.method == "POST") {
+        // 每5秒允许一个操作
+        this.nextAllowedTime += 5;
       }
-    })
-  }
 
-  // =======================================================
-  // 新增：清空当前 Durable Object 实例的速率限制
-  // =======================================================
-  async clearLimit() {
-    await this.storage.delete("nextAllowedTime"); // 删除特定键
-    this.nextAllowedTime = 0; // 重置内存中的值
-    console.log(`RateLimiter ID: ${this.state.id} - 速率限制已清空。`);
+      // 返回客户端需要等待的秒数
+      let cooldown = Math.max(0, this.nextAllowedTime - now - 20);
+      return new Response(cooldown);
+    })
   }
 }
 
 // RateLimiterClient 在调用方实现速率限制逻辑
 class RateLimiterClient {
-  /**
-   * @param {function(): DurableObjectStub} getLimiterStub
-   * @param {function(Error): void} reportError
-   */
   constructor(getLimiterStub, reportError) {
     this.getLimiterStub = getLimiterStub;
     this.reportError = reportError;
