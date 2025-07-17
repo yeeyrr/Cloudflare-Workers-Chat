@@ -1,4 +1,4 @@
-# Cloudflare 边缘聊天演示-汉化版
+# Cloudflare 边缘聊天演示-汉化增强版
 
 这是一个基于 [Cloudflare Workers](https://workers.cloudflare.com/) 并使用 [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) 实现的实时聊天应用演示，具有消息历史存储功能。该应用 100% 运行在 Cloudflare 的边缘网络上。
 
@@ -16,7 +16,7 @@
 
 更多细节，请查看代码！代码中有详细的注释。
 
-## 清空聊天
+## 清空聊天(自制功能)
 
 支持清空指定聊天室的聊天记录(相对于官方源代码新增功能。因为od空间的局限性，若需全部清空请删除并重建绑定的Durable Objects空间cloudflare-workers-chat_ChatRoom)
 
